@@ -1,0 +1,12 @@
+= Compositional Streaming with FS2
+:source-highlighter: highlightjs
+:highlightjs-theme: css/solarized-dark.css
+:highlightjsdir: highlight
+:revealjs_theme: moon
+:revealjs_hash: true
+:customcss: css/presentation.css
+:icons: font
+
+image::images/fs2-logo.png[]
+
+== TODO

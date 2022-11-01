@@ -7,6 +7,115 @@
 :customcss: css/presentation.css
 :icons: font
 
+[.columns]
+== Compositional Streaming with FS2
+
+[.column]
 image::images/fs2-logo.png[]
 
-== TODO
+[.column]
+* Comprehensible
+* Compositional
+* Declarative
+* Expressive
+* Efficient
+* Foundational
+
+[.columns]
+=== Origins of FS2
+
+[.column.is-one-third]
+image::images/fpis-cover.png[]
+
+[.column]
+image::images/nescala.png[]
+
+== Line Count
+
+[source,scala]
+----
+/** Returns true if file has more than 40,000 lines. */
+def linesGt40k(filename: String): Boolean =
+  val src = io.Source.fromFile(filename)
+  try
+    var count = 0
+    val lines: Iterator[String] = src.getLines()
+    while count <= 40000 && lines.hasNext do
+      lines.next
+      count += 1
+    count > 40000
+  finally src.close
+----
+
+=== FS2 Line Count
+
+[source,scala]
+----
+import cats.effect.IO
+import fs2.Stream
+import fs2.io.file.{Files, Path}
+
+def linesGt40k(filename: String): IO[Boolean] =
+  val lines: Stream[IO, String] =
+    Files[IO].readUtf8Lines(Path(filename))
+
+  val linesWithIndices: Stream[IO, (String, Int)] =
+    lines.zipWithIndex
+
+  val gt40k: Stream[IO, Boolean] = 
+    linesWithIndices.exists((line, idx) => idx >= 40000)
+
+  gt40k.compile.lastOrError
+----
+
+=== FS2 Line Count
+
+[source,scala]
+----
+import cats.effect.IO
+import fs2.io.file.{Files, Path}
+
+def linesGt40k(filename: String): IO[Boolean] =
+  Files[IO].readUtf8Lines(Path(filename))
+    .zipWithIndex
+    .exists((line, idx) => idx >= 40000)
+    .compile.lastOrError
+----
+
+=== FS2 Line Count
+
+[source,scala]
+----
+import cats.effect.IO
+import fs2.io.file.{Files, Path}
+import fs2.text
+
+def linesGt40k(filename: String): IO[Boolean] =
+  Files[IO].readAll(Path(filename))
+    .through(text.utf8.decode)
+    .through(text.lines)
+    .zipWithIndex
+    .exists((line, idx) => idx >= 40000)
+    .compile.lastOrError
+----
+
+== File Conversion
+
+Task: Convert a file of fahrenheit readings to celsius
+
+=== File Conversion
+
+[source,scala]
+----
+def convert(in: Path, out: Path): IO[Unit] =
+  def fahrenheitToCelsius(f: Double): Double =
+    (f - 32.0) * (5.0 / 9.0)
+
+  Files[IO].readUtf8Lines(in)
+    .filter(s => !s.trim.isEmpty && !s.startsWith("//"))
+    .map(line => fahrenheitToCelsius(line.toDouble).toString)
+    .intersperse("\n")
+    .through(text.utf8.encode)
+    .through(Files[IO].writeAll(out))
+    .compile.drain
+----

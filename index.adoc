@@ -107,10 +107,10 @@ Task: Convert a file of fahrenheit readings to celsius
 
 [source,scala]
 ----
-def convert(in: Path, out: Path): IO[Unit] =
-  def fahrenheitToCelsius(f: Double): Double =
-    (f - 32.0) * (5.0 / 9.0)
+def fahrenheitToCelsius(f: Double): Double =
+  (f - 32.0) * (5.0 / 9.0)
 
+def convert(in: Path, out: Path): IO[Unit] =
   Files[IO].readUtf8Lines(in)
     .filter(s => !s.trim.isEmpty && !s.startsWith("//"))
     .map(line => fahrenheitToCelsius(line.toDouble).toString)
@@ -118,4 +118,73 @@ def convert(in: Path, out: Path): IO[Unit] =
     .through(text.utf8.encode)
     .through(Files[IO].writeAll(out))
     .compile.drain
+----
+
+=== File Conversion
+
+[source,scala]
+----
+def convert(in: Path, out: Path): IO[Unit] =
+  Files[IO].readUtf8Lines(in)
+    .through(convertStream(out))
+    .compile.drain
+
+def convertStream(out: Path)(in: Stream[IO, String]): Stream[IO, Nothing] =
+  in.filter(s => !s.trim.isEmpty && !s.startsWith("//"))
+    .map(line => fahrenheitToCelsius(line.toDouble).toString)
+    .intersperse("\n")
+    .through(text.utf8.encode)
+    .through(Files[IO].writeAll(out))
+----
+
+=== File Conversion
+
+[source,scala]
+----
+type Pipe[F, I, O] = Stream[F, I] => Stream[F, O]
+
+def convertStream(out: Path): Pipe[IO, String, Nothing] =
+  in => in.filter(s => !s.trim.isEmpty && !s.startsWith("//"))
+    .map(line => fahrenheitToCelsius(line.toDouble).toString)
+    .intersperse("\n")
+    .through(text.utf8.encode)
+    .through(Files[IO].writeAll(out))
+----
+
+=== Tail File Conversion
+
+[source,scala]
+----
+def tailConvert(in: Path, out: Path): IO[Unit] =
+  Files[IO].tail(in)
+    .through(text.utf8.decode)
+    .through(text.lines)
+    .through(convertStream(out))
+    .compile.drain
+
+def convertStream(out: Path): Pipe[IO, String, Nothing] =
+  in => in.filter(s => !s.trim.isEmpty && !s.startsWith("//"))
+    .map(line => fahrenheitToCelsius(line.toDouble).toString)
+    .intersperse("\n")
+    .through(text.utf8.encode)
+    .through(Files[IO].writeAll(out))
+----
+
+=== Tail File Conversion
+
+[source,scala]
+----
+def tailConvert(in: Path, out: Path): IO[Unit] =
+  Files[IO].tail(in)
+    .through(
+      text.utf8.decode andThen
+      text.lines andThen
+      convertStream(out))
+    .compile.drain
+
+def convertStream(out: Path): Pipe[IO, String, Nothing] =
+  in => in.filter(s => !s.trim.isEmpty && !s.startsWith("//"))
+    .map(line => fahrenheitToCelsius(line.toDouble).toString)
+    .intersperse("\n")
+    .through(text.utf8.encode andThen Files[IO].writeAll(out))
 ----

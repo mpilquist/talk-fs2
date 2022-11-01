@@ -457,17 +457,58 @@ def linesGt40k(filename: String): IO[Boolean] =
     .zipWithIndex
     .exists((line, idx) =&gt; idx &gt;= 40000)
     .compile.lastOrError</code></pre></div></div></div></section></section>
-<section><section id="_file_conversion"><h2>File Conversion</h2><div class="slide-content"><div class="paragraph"><p>Task: Convert a file of fahrenheit readings to celsius</p></div></div></section><section id="_file_conversion_2"><h2>File Conversion</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def convert(in: Path, out: Path): IO[Unit] =
-  def fahrenheitToCelsius(f: Double): Double =
-    (f - 32.0) * (5.0 / 9.0)
+<section><section id="_file_conversion"><h2>File Conversion</h2><div class="slide-content"><div class="paragraph"><p>Task: Convert a file of fahrenheit readings to celsius</p></div></div></section><section id="_file_conversion_2"><h2>File Conversion</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def fahrenheitToCelsius(f: Double): Double =
+  (f - 32.0) * (5.0 / 9.0)
 
+def convert(in: Path, out: Path): IO[Unit] =
   Files[IO].readUtf8Lines(in)
     .filter(s =&gt; !s.trim.isEmpty &amp;&amp; !s.startsWith("//"))
     .map(line =&gt; fahrenheitToCelsius(line.toDouble).toString)
     .intersperse("\n")
     .through(text.utf8.encode)
     .through(Files[IO].writeAll(out))
-    .compile.drain</code></pre></div></div></div></section></section></div></div><script src="node_modules/reveal.js/dist/reveal.js"></script><script>Array.prototype.slice.call(document.querySelectorAll('.slides section')).forEach(function(slide) {
+    .compile.drain</code></pre></div></div></div></section><section id="_file_conversion_3"><h2>File Conversion</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def convert(in: Path, out: Path): IO[Unit] =
+  Files[IO].readUtf8Lines(in)
+    .through(convertStream(out))
+    .compile.drain
+
+def convertStream(out: Path)(in: Stream[IO, String]): Stream[IO, Nothing] =
+  in.filter(s =&gt; !s.trim.isEmpty &amp;&amp; !s.startsWith("//"))
+    .map(line =&gt; fahrenheitToCelsius(line.toDouble).toString)
+    .intersperse("\n")
+    .through(text.utf8.encode)
+    .through(Files[IO].writeAll(out))</code></pre></div></div></div></section><section id="_file_conversion_4"><h2>File Conversion</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">type Pipe[F, I, O] = Stream[F, I] =&gt; Stream[F, O]
+
+def convertStream(out: Path): Pipe[IO, String, Nothing] =
+  in =&gt; in.filter(s =&gt; !s.trim.isEmpty &amp;&amp; !s.startsWith("//"))
+    .map(line =&gt; fahrenheitToCelsius(line.toDouble).toString)
+    .intersperse("\n")
+    .through(text.utf8.encode)
+    .through(Files[IO].writeAll(out))</code></pre></div></div></div></section><section id="_tail_file_conversion"><h2>Tail File Conversion</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def tailConvert(in: Path, out: Path): IO[Unit] =
+  Files[IO].tail(in)
+    .through(text.utf8.decode)
+    .through(text.lines)
+    .through(convertStream(out))
+    .compile.drain
+
+def convertStream(out: Path): Pipe[IO, String, Nothing] =
+  in =&gt; in.filter(s =&gt; !s.trim.isEmpty &amp;&amp; !s.startsWith("//"))
+    .map(line =&gt; fahrenheitToCelsius(line.toDouble).toString)
+    .intersperse("\n")
+    .through(text.utf8.encode)
+    .through(Files[IO].writeAll(out))</code></pre></div></div></div></section><section id="_tail_file_conversion_2"><h2>Tail File Conversion</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def tailConvert(in: Path, out: Path): IO[Unit] =
+  Files[IO].tail(in)
+    .through(
+      text.utf8.decode andThen
+      text.lines andThen
+      convertStream(out))
+    .compile.drain
+
+def convertStream(out: Path): Pipe[IO, String, Nothing] =
+  in =&gt; in.filter(s =&gt; !s.trim.isEmpty &amp;&amp; !s.startsWith("//"))
+    .map(line =&gt; fahrenheitToCelsius(line.toDouble).toString)
+    .intersperse("\n")
+    .through(text.utf8.encode andThen Files[IO].writeAll(out))</code></pre></div></div></div></section></section></div></div><script src="node_modules/reveal.js/dist/reveal.js"></script><script>Array.prototype.slice.call(document.querySelectorAll('.slides section')).forEach(function(slide) {
   if (slide.getAttribute('data-background-color')) return;
   // user needs to explicitly say he wants CSS color to override otherwise we might break custom css or theme (#226)
   if (!(slide.classList.contains('canvas') || slide.classList.contains('background'))) return;

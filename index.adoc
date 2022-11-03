@@ -82,7 +82,33 @@ def linesGt40k(filename: String): IO[Boolean] =
     .compile.lastOrError
 ----
 
+=== Streams
+
+[source,scala]
+----
+trait Stream[F[_], O]
+----
+
+Computation which may evaluate effects of type `F` and output values of type `O`.
+
 === FS2 Line Count
+
+[source,scala]
+----
+import cats.effect.IO
+import fs2.io.file.{Files, Path}
+
+def linesGt40k(filename: String): IO[Boolean] =
+  Files[IO].readUtf8Lines(Path(filename))         <1>
+    .zipWithIndex
+    .exists((line, idx) => idx >= 40000)
+    .compile.lastOrError
+----
+<1> readUtf8Lines is derived from various lower level methods
+
+=== FS2 Line Count
+
+Inlining definition of readUtf8Lines gives:
 
 [source,scala]
 ----
@@ -98,6 +124,40 @@ def linesGt40k(filename: String): IO[Boolean] =
     .exists((line, idx) => idx >= 40000)
     .compile.lastOrError
 ----
+
+=== Pipes
+
+[source,scala]
+----
+import cats.effect.IO
+import fs2.io.file.{Files, Path}
+import fs2.text
+
+def linesGt40k(filename: String): IO[Boolean] =
+  Files[IO].readAll(Path(filename))
+    .through(text.utf8.decode: Pipe[IO, Byte, String])
+    .through(text.lines: Pipe[IO, String, String])
+    .zipWithIndex
+    .exists((line, idx) => idx >= 40000)
+    .compile.lastOrError
+----
+
+=== Pipes
+
+[source,scala]
+----
+type Pipe[F[_], I, O] = Stream[F, I] => Stream[F, O]      <1>
+
+trait Stream[F[_], O]:
+  def through[O2](pipe: Pipe[F, O, O2]): Stream[F, O2] =
+    pipe(this)                                            <2>
+
+val decodeUtf8Lines: Pipe[IO, Byte, String] =
+  text.utf8.decode andThen text.lines                     <3>
+----
+<1> Pipes are functions which transform the output type of a stream
+<2> The `through` operator is function application
+<3> Pipe composition is function composition
 
 == File Conversion
 
@@ -122,6 +182,8 @@ def convert(in: Path, out: Path): IO[Unit] =
 
 === File Conversion
 
+Factor out the core transformation logic.
+
 [source,scala]
 ----
 def convert(in: Path, out: Path): IO[Unit] =
@@ -137,12 +199,13 @@ def convertStream(out: Path)(in: Stream[IO, String]): Stream[IO, Nothing] =
     .through(Files[IO].writeAll(out))
 ----
 
+
 === File Conversion
+
+Rewrite as a pipe.
 
 [source,scala]
 ----
-type Pipe[F, I, O] = Stream[F, I] => Stream[F, O]
-
 def convertStream(out: Path): Pipe[IO, String, Nothing] =
   in => in.filter(s => !s.trim.isEmpty && !s.startsWith("//"))
     .map(line => fahrenheitToCelsius(line.toDouble).toString)
@@ -153,10 +216,12 @@ def convertStream(out: Path): Pipe[IO, String, Nothing] =
 
 === Tail File Conversion
 
+Core logic can be reused with various sources.
+
 [source,scala]
 ----
 def tailConvert(in: Path, out: Path): IO[Unit] =
-  Files[IO].tail(in)
+  Files[IO].tail(in)                                    <1>
     .through(text.utf8.decode)
     .through(text.lines)
     .through(convertStream(out))
@@ -169,22 +234,64 @@ def convertStream(out: Path): Pipe[IO, String, Nothing] =
     .through(text.utf8.encode)
     .through(Files[IO].writeAll(out))
 ----
+<1> Tails the specified file, emitting data as its written to file from different source.
 
-=== Tail File Conversion
+== Network I/O
+
+* Streams related to network I/O:
+** data received/sent from/to a TCP socket
+** datagrams received/sent from/to a UDP socket
+** TLS protected sockets
 
 [source,scala]
 ----
-def tailConvert(in: Path, out: Path): IO[Unit] =
-  Files[IO].tail(in)
-    .through(
-      text.utf8.decode andThen
-      text.lines andThen
-      convertStream(out))
-    .compile.drain
+val client: Resource[IO, Socket[IO]] =
+  Network[IO].client(SocketAddress(ip"127.0.0.1", port"5555"))
 
-def convertStream(out: Path): Pipe[IO, String, Nothing] =
-  in => in.filter(s => !s.trim.isEmpty && !s.startsWith("//"))
-    .map(line => fahrenheitToCelsius(line.toDouble).toString)
-    .intersperse("\n")
-    .through(text.utf8.encode andThen Files[IO].writeAll(out))
+val bytes: Stream[IO, String] =
+  Stream.resource(client).flatMap { socket =>
+    Stream.exec(socket.write(Chunk.array("echo".getBytes))) ++
+      socket.reads.through(text.utf8.decode)
+  }
 ----
+
+=== Network I/O
+
+* Streams related to network I/O (continued):
+** clients of a TCP server socket
+
+[source,scala]
+----
+val clients: Stream[IO, Socket[IO]] =
+  Network[IO].server(ip"127.0.0.1", port"5555")
+
+def handle(client: Socket[IO]): Stream[IO, Nothing] = ???
+
+val server: Stream[IO, Unit] = 
+  val handled: Stream[IO, Stream[IO, Nothing]] =
+    clients.map(handle)
+  handled.parJoin(1024)
+----
+
+== http4s
+
+== Skunk
+
+== Ecosystem
+
+fs2-reactive-streams, fs2-data, fs2-kafka, fs2-grpc
+
+[.columns]
+== Compositional Streaming with FS2
+
+[.column]
+image::images/fs2-logo.png[]
+
+[.column]
+* Comprehensible
+* Compositional
+* Declarative
+* Expressive
+* Efficient
+* Foundational
+

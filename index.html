@@ -446,7 +446,17 @@ def linesGt40k(filename: String): IO[Boolean] =
   Files[IO].readUtf8Lines(Path(filename))
     .zipWithIndex
     .exists((line, idx) =&gt; idx &gt;= 40000)
-    .compile.lastOrError</code></pre></div></div></div></section><section id="_fs2_line_count_3"><h2>FS2 Line Count</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">import cats.effect.IO
+    .compile.lastOrError</code></pre></div></div></div></section><section id="_streams"><h2>Streams</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">trait Stream[F[_], O]</code></pre></div></div>
+<div class="paragraph"><p>Computation which may evaluate effects of type <code>F</code> and output values of type <code>O</code>.</p></div></div></section><section id="_fs2_line_count_3"><h2>FS2 Line Count</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">import cats.effect.IO
+import fs2.io.file.{Files, Path}
+
+def linesGt40k(filename: String): IO[Boolean] =
+  Files[IO].readUtf8Lines(Path(filename))         <i class="conum" data-value="1"></i><b>(1)</b>
+    .zipWithIndex
+    .exists((line, idx) =&gt; idx &gt;= 40000)
+    .compile.lastOrError</code></pre></div></div>
+<div class="colist arabic"><table><tr><td><i class="conum" data-value="1"></i><b>1</b></td><td>readUtf8Lines is derived from various lower level methods</td></tr></table></div></div></section><section id="_fs2_line_count_4"><h2>FS2 Line Count</h2><div class="slide-content"><div class="paragraph"><p>Inlining definition of readUtf8Lines gives:</p></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">import cats.effect.IO
 import fs2.io.file.{Files, Path}
 import fs2.text
 
@@ -456,7 +466,25 @@ def linesGt40k(filename: String): IO[Boolean] =
     .through(text.lines)
     .zipWithIndex
     .exists((line, idx) =&gt; idx &gt;= 40000)
-    .compile.lastOrError</code></pre></div></div></div></section></section>
+    .compile.lastOrError</code></pre></div></div></div></section><section id="_pipes"><h2>Pipes</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">import cats.effect.IO
+import fs2.io.file.{Files, Path}
+import fs2.text
+
+def linesGt40k(filename: String): IO[Boolean] =
+  Files[IO].readAll(Path(filename))
+    .through(text.utf8.decode: Pipe[IO, Byte, String])
+    .through(text.lines: Pipe[IO, String, String])
+    .zipWithIndex
+    .exists((line, idx) =&gt; idx &gt;= 40000)
+    .compile.lastOrError</code></pre></div></div></div></section><section id="_pipes_2"><h2>Pipes</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">type Pipe[F[_], I, O] = Stream[F, I] =&gt; Stream[F, O]      <i class="conum" data-value="1"></i><b>(1)</b>
+
+trait Stream[F[_], O]:
+  def through[O2](pipe: Pipe[F, O, O2]): Stream[F, O2] =
+    pipe(this)                                            <i class="conum" data-value="2"></i><b>(2)</b>
+
+val decodeUtf8Lines: Pipe[IO, Byte, String] =
+  text.utf8.decode andThen text.lines                     <i class="conum" data-value="3"></i><b>(3)</b></code></pre></div></div>
+<div class="colist arabic"><table><tr><td><i class="conum" data-value="1"></i><b>1</b></td><td>Pipes are functions which transform the output type of a stream</td></tr><tr><td><i class="conum" data-value="2"></i><b>2</b></td><td>The <code>through</code> operator is function application</td></tr><tr><td><i class="conum" data-value="3"></i><b>3</b></td><td>Pipe composition is function composition</td></tr></table></div></div></section></section>
 <section><section id="_file_conversion"><h2>File Conversion</h2><div class="slide-content"><div class="paragraph"><p>Task: Convert a file of fahrenheit readings to celsius</p></div></div></section><section id="_file_conversion_2"><h2>File Conversion</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def fahrenheitToCelsius(f: Double): Double =
   (f - 32.0) * (5.0 / 9.0)
 
@@ -467,7 +495,8 @@ def convert(in: Path, out: Path): IO[Unit] =
     .intersperse("\n")
     .through(text.utf8.encode)
     .through(Files[IO].writeAll(out))
-    .compile.drain</code></pre></div></div></div></section><section id="_file_conversion_3"><h2>File Conversion</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def convert(in: Path, out: Path): IO[Unit] =
+    .compile.drain</code></pre></div></div></div></section><section id="_file_conversion_3"><h2>File Conversion</h2><div class="slide-content"><div class="paragraph"><p>Factor out the core transformation logic.</p></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def convert(in: Path, out: Path): IO[Unit] =
   Files[IO].readUtf8Lines(in)
     .through(convertStream(out))
     .compile.drain
@@ -477,15 +506,15 @@ def convertStream(out: Path)(in: Stream[IO, String]): Stream[IO, Nothing] =
     .map(line =&gt; fahrenheitToCelsius(line.toDouble).toString)
     .intersperse("\n")
     .through(text.utf8.encode)
-    .through(Files[IO].writeAll(out))</code></pre></div></div></div></section><section id="_file_conversion_4"><h2>File Conversion</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">type Pipe[F, I, O] = Stream[F, I] =&gt; Stream[F, O]
-
-def convertStream(out: Path): Pipe[IO, String, Nothing] =
+    .through(Files[IO].writeAll(out))</code></pre></div></div></div></section><section id="_file_conversion_4"><h2>File Conversion</h2><div class="slide-content"><div class="paragraph"><p>Rewrite as a pipe.</p></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def convertStream(out: Path): Pipe[IO, String, Nothing] =
   in =&gt; in.filter(s =&gt; !s.trim.isEmpty &amp;&amp; !s.startsWith("//"))
     .map(line =&gt; fahrenheitToCelsius(line.toDouble).toString)
     .intersperse("\n")
     .through(text.utf8.encode)
-    .through(Files[IO].writeAll(out))</code></pre></div></div></div></section><section id="_tail_file_conversion"><h2>Tail File Conversion</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def tailConvert(in: Path, out: Path): IO[Unit] =
-  Files[IO].tail(in)
+    .through(Files[IO].writeAll(out))</code></pre></div></div></div></section><section id="_tail_file_conversion"><h2>Tail File Conversion</h2><div class="slide-content"><div class="paragraph"><p>Core logic can be reused with various sources.</p></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def tailConvert(in: Path, out: Path): IO[Unit] =
+  Files[IO].tail(in)                                    <i class="conum" data-value="1"></i><b>(1)</b>
     .through(text.utf8.decode)
     .through(text.lines)
     .through(convertStream(out))
@@ -496,19 +525,30 @@ def convertStream(out: Path): Pipe[IO, String, Nothing] =
     .map(line =&gt; fahrenheitToCelsius(line.toDouble).toString)
     .intersperse("\n")
     .through(text.utf8.encode)
-    .through(Files[IO].writeAll(out))</code></pre></div></div></div></section><section id="_tail_file_conversion_2"><h2>Tail File Conversion</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def tailConvert(in: Path, out: Path): IO[Unit] =
-  Files[IO].tail(in)
-    .through(
-      text.utf8.decode andThen
-      text.lines andThen
-      convertStream(out))
-    .compile.drain
+    .through(Files[IO].writeAll(out))</code></pre></div></div>
+<div class="colist arabic"><table><tr><td><i class="conum" data-value="1"></i><b>1</b></td><td>Tails the specified file, emitting data as its written to file from different source.</td></tr></table></div></div></section></section>
+<section><section id="_network_io"><h2>Network I/O</h2><div class="slide-content"><div class="ulist"><ul><li><p>Streams related to network I/O:</p><div class="ulist"><ul><li><p>data received/sent from/to a TCP socket</p></li><li><p>datagrams received/sent from/to a UDP socket</p></li><li><p>TLS protected sockets</p></li></ul></div></li></ul></div><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val client: Resource[IO, Socket[IO]] =
+  Network[IO].client(SocketAddress(ip"127.0.0.1", port"5555"))
 
-def convertStream(out: Path): Pipe[IO, String, Nothing] =
-  in =&gt; in.filter(s =&gt; !s.trim.isEmpty &amp;&amp; !s.startsWith("//"))
-    .map(line =&gt; fahrenheitToCelsius(line.toDouble).toString)
-    .intersperse("\n")
-    .through(text.utf8.encode andThen Files[IO].writeAll(out))</code></pre></div></div></div></section></section></div></div><script src="node_modules/reveal.js/dist/reveal.js"></script><script>Array.prototype.slice.call(document.querySelectorAll('.slides section')).forEach(function(slide) {
+val bytes: Stream[IO, String] =
+  Stream.resource(client).flatMap { socket =&gt;
+    Stream.exec(socket.write(Chunk.array("echo".getBytes))) ++
+      socket.reads.through(text.utf8.decode)
+  }</code></pre></div></div></div></section><section id="_network_io_2"><h2>Network I/O</h2><div class="slide-content"><div class="ulist"><ul><li><p>Streams related to network I/O (continued):</p><div class="ulist"><ul><li><p>clients of a TCP server socket</p></li></ul></div></li></ul></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val clients: Stream[IO, Socket[IO]] =
+  Network[IO].server(ip"127.0.0.1", port"5555")
+
+def handle(client: Socket[IO]): Stream[IO, Nothing] = ???
+
+val server: Stream[IO, Unit] =
+  val handled: Stream[IO, Stream[IO, Nothing]] =
+    clients.map(handle)
+  handled.parJoin(1024)</code></pre></div></div></div></section></section>
+<section id="_http4s"><h2>http4s</h2></section>
+<section id="_skunk"><h2>Skunk</h2></section>
+<section id="_ecosystem"><h2>Ecosystem</h2><div class="slide-content"><div class="paragraph"><p>fs2-reactive-streams, fs2-data, fs2-kafka, fs2-grpc</p></div></div></section>
+<section id="_compositional_streaming_with_fs2_2" class="columns"><h2>Compositional Streaming with FS2</h2><div class="slide-content"><div class="imageblock column"><img src="images/fs2-logo.png" alt="fs2 logo"></div>
+<div class="ulist column"><ul><li><p>Comprehensible</p></li><li><p>Compositional</p></li><li><p>Declarative</p></li><li><p>Expressive</p></li><li><p>Efficient</p></li><li><p>Foundational</p></li></ul></div></div></section></div></div><script src="node_modules/reveal.js/dist/reveal.js"></script><script>Array.prototype.slice.call(document.querySelectorAll('.slides section')).forEach(function(slide) {
   if (slide.getAttribute('data-background-color')) return;
   // user needs to explicitly say he wants CSS color to override otherwise we might break custom css or theme (#226)
   if (!(slide.classList.contains('canvas') || slide.classList.contains('background'))) return;

@@ -543,10 +543,58 @@ def handle(client: Socket[IO]): Stream[IO, Nothing] = ???
 val server: Stream[IO, Unit] =
   val handled: Stream[IO, Stream[IO, Nothing]] =
     clients.map(handle)
-  handled.parJoin(1024)</code></pre></div></div></div></section></section>
-<section id="_http4s"><h2>http4s</h2></section>
-<section id="_skunk"><h2>Skunk</h2></section>
-<section id="_ecosystem"><h2>Ecosystem</h2><div class="slide-content"><div class="paragraph"><p>fs2-reactive-streams, fs2-data, fs2-kafka, fs2-grpc</p></div></div></section>
+  handled.parJoin(1024)</code></pre></div></div></div></section><section id="_udp_replay"><h2>UDP Replay</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">def replay(file: Path, timescale: Double, destination: Host,
+  portMap: Port =&gt; Option[Port]
+): Stream[IO, Nothing] =
+  Files[IO]
+    .readAll(file)
+    .through(CaptureFile.udpDatagrams.toPipeByte)
+    .through(TimeStamped.throttle(timescale, 1.second))
+    .map(_.value)
+    .through(changeDestination(destination, portMap))
+    .through(sendAll)
+
+def sendAll: Pipe[IO, Datagram, Nothing] = datagrams =&gt;
+  Stream.resource(Network[IO].openDatagramSocket())
+    .flatMap(socket =&gt; datagrams.through(socket.writes))</code></pre></div></div></div></section></section>
+<section><section id="_http4s" class="columns"><h2>http4s</h2><div class="slide-content"><div class="imageblock column"><img src="images/http4s.png" alt="http4s"></div><div class="ulist column"><ul><li><p>Request &amp; response entity bodies modeled as byte streams</p></li><li><p>Ember backend built entirely on fs2</p><div class="ulist"><ul><li><p>Network sockets</p></li><li><p>TLS</p></li><li><p>Websockets</p></li><li><p>Control flow</p></li></ul></div></li></ul></div></div></section><section id="_http4s_response_streaming"><h2>http4s Response Streaming</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">import scala.concurrent.duration.*
+import cats.effect.*
+import fs2.Stream
+import org.http4s.*
+import org.http4s.dsl.io.*
+
+// An infinite stream of elapsed time
+val seconds: Stream[IO, FiniteDuration] =
+  Stream.awakeEvery[IO](1.second)
+
+val routes = HttpRoutes.of[IO] {
+  case GET -&gt; Root / "seconds" =&gt;
+    Ok(seconds.map(_.toString))
+}</code></pre></div></div>
+<div class="paragraph notes"><p>From <a href="https://http4s.org/v0.23/docs/streaming.html" class="bare">https://http4s.org/v0.23/docs/streaming.html</a></p></div></div></section><section id="_http4s_response_streaming_2"><h2>http4s Response Streaming</h2><div class="slide-content"><div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val seconds: Stream[IO, FiniteDuration] =
+  Stream.awakeEvery[IO](1.second)
+
+def getStats: IO[Stats] = ???
+
+val stats: Stream[IO, Stats] =
+  seconds.evalMap(_ =&gt; getStats)
+
+val routes = HttpRoutes.of[IO] {
+  case GET -&gt; Root / "seconds" =&gt;
+    Ok(seconds.map(_.toString))
+  case GET -&gt; Root / "stats" =&gt;
+    Ok(stats)
+}</code></pre></div></div></div></section></section>
+<section id="_skunk"><h2>Skunk</h2><div class="slide-content"><div class="ulist"><ul><li><p>Postgres library (not JDBC based)</p></li><li><p>Implements Postgres wire protocol via fs2 &amp; scodec</p></li><li><p>Fantastic error messages</p></li></ul></div>
+<div class="listingblock"><div class="content"><pre class="highlightjs highlight"><code class="language-scala hljs" data-noescape="true" data-lang="scala">val query: Query[String, OrderId] =
+  sql"""SELECT id FROM order WHERE vendor LIKE $varchar""".query(orderId)
+
+val ordersFromAcmeVendors: Stream[IO, OrderId] =
+  Stream.resource(query).flatMap(ps =&gt;
+    ps.stream("Acme%", 64)
+  )</code></pre></div></div></div></section>
+<section id="_ecosystem" class="columns"><h2>Ecosystem</h2><div class="slide-content"><div class="ulist column"><ul><li><p>Support for Scala 2.12, 2.13, and 3</p></li><li><p>Support for JVM, JS, and Native</p></li><li><p>Founded in March 2013</p></li><li><p>98 contributors</p></li></ul></div>
+<div class="ulist column"><ul><li><p>Dozens of interop projects including:</p><div class="ulist"><ul><li><p>fs2-reactive-streams</p></li><li><p>fs2-data</p></li><li><p>fs2-kafka</p></li><li><p>fs2-grpc</p></li></ul></div></li></ul></div></div></section>
 <section id="_compositional_streaming_with_fs2_2" class="columns"><h2>Compositional Streaming with FS2</h2><div class="slide-content"><div class="imageblock column"><img src="images/fs2-logo.png" alt="fs2 logo"></div>
 <div class="ulist column"><ul><li><p>Comprehensible</p></li><li><p>Compositional</p></li><li><p>Declarative</p></li><li><p>Expressive</p></li><li><p>Efficient</p></li><li><p>Foundational</p></li></ul></div></div></section></div></div><script src="node_modules/reveal.js/dist/reveal.js"></script><script>Array.prototype.slice.call(document.querySelectorAll('.slides section')).forEach(function(slide) {
   if (slide.getAttribute('data-background-color')) return;

@@ -273,13 +273,115 @@ val server: Stream[IO, Unit] =
   handled.parJoin(1024)
 ----
 
+=== UDP Replay
+
+[source,scala]
+----
+def replay(file: Path, timescale: Double, destination: Host,
+  portMap: Port => Option[Port]
+): Stream[IO, Nothing] =
+  Files[IO]
+    .readAll(file)
+    .through(CaptureFile.udpDatagrams.toPipeByte)
+    .through(TimeStamped.throttle(timescale, 1.second))
+    .map(_.value)
+    .through(changeDestination(destination, portMap))
+    .through(sendAll)
+
+def sendAll: Pipe[IO, Datagram, Nothing] = datagrams =>
+  Stream.resource(Network[IO].openDatagramSocket())
+    .flatMap(socket => datagrams.through(socket.writes))
+----
+
+[.columns]
 == http4s
+
+[.column]
+image::images/http4s.png[]
+
+[.column]
+* Request & response entity bodies modeled as byte streams
+* Ember backend built entirely on fs2
+** Network sockets
+** TLS
+** Websockets
+** Control flow
+
+=== http4s Response Streaming
+
+[source,scala]
+----
+import scala.concurrent.duration.*
+import cats.effect.*
+import fs2.Stream
+import org.http4s.*
+import org.http4s.dsl.io.*
+
+// An infinite stream of elapsed time
+val seconds: Stream[IO, FiniteDuration] =
+  Stream.awakeEvery[IO](1.second)
+
+val routes = HttpRoutes.of[IO] {
+  case GET -> Root / "seconds" =>
+    Ok(seconds.map(_.toString))
+}
+----
+
+[.notes]
+From https://http4s.org/v0.23/docs/streaming.html
+
+=== http4s Response Streaming
+
+[source,scala]
+----
+val seconds: Stream[IO, FiniteDuration] =
+  Stream.awakeEvery[IO](1.second)
+
+def getStats: IO[Stats] = ???
+
+val stats: Stream[IO, Stats] =
+  seconds.evalMap(_ => getStats)
+
+val routes = HttpRoutes.of[IO] {
+  case GET -> Root / "seconds" =>
+    Ok(seconds.map(_.toString))
+  case GET -> Root / "stats" =>
+    Ok(stats)
+}
+----
 
 == Skunk
 
+* Postgres library (not JDBC based)
+* Implements Postgres wire protocol via fs2 & scodec
+* Fantastic error messages
+
+[source,scala]
+----
+val query: Query[String, OrderId] =
+  sql"""SELECT id FROM order WHERE vendor LIKE $varchar""".query(orderId)
+
+val ordersFromAcmeVendors: Stream[IO, OrderId] =
+  Stream.resource(query).flatMap(ps =>
+    ps.stream("Acme%", 64)
+  )
+----
+
+[.columns]
 == Ecosystem
 
-fs2-reactive-streams, fs2-data, fs2-kafka, fs2-grpc
+[.column]
+* Support for Scala 2.12, 2.13, and 3
+* Support for JVM, JS, and Native
+* Founded in March 2013
+* 98 contributors
+
+[.column]
+* Dozens of interop projects including:
+** fs2-reactive-streams
+** fs2-data
+** fs2-kafka
+** fs2-grpc
 
 [.columns]
 == Compositional Streaming with FS2

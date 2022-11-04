@@ -8,7 +8,7 @@
 :icons: font
 
 [.columns]
-== Compositional Streaming with FS2
+== Functional Streams for Scala
 
 [.column]
 image::images/fs2-logo.png[]
@@ -362,7 +362,7 @@ val query: Query[String, OrderId] =
   sql"""SELECT id FROM order WHERE vendor LIKE $varchar""".query(orderId)
 
 val ordersFromAcmeVendors: Stream[IO, OrderId] =
-  Stream.resource(query).flatMap(ps =>
+  Stream.resource(session.prepare(query)).flatMap(ps =>
     ps.stream("Acme%", 64)
   )
 ----
@@ -382,6 +382,7 @@ val ordersFromAcmeVendors: Stream[IO, OrderId] =
 ** fs2-data
 ** fs2-kafka
 ** fs2-grpc
+** More at https://fs2.io
 
 [.columns]
 == Compositional Streaming with FS2
